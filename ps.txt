@@ -1,0 +1,7 @@
+CONTAINER ID   IMAGE                                                  COMMAND                  CREATED              STATUS                        PORTS                                                      NAMES
+7840221198b9   clickhouse/clickhouse-client:latest                    "/bin/sh -c ' sleep …"   About a minute ago   Exited (127) 57 seconds ago                                                              clickhouse-client
+17c15a49e4e8   clickhouse/clickhouse-server:latest                    "/entrypoint.sh"         About a minute ago   Up About a minute             0.0.0.0:8123->8123/tcp, 0.0.0.0:9000->9000/tcp, 9009/tcp   clickhouse-server
+b30635b6bda5   diagnosisapi-malaria-api                               "python run.py"          2 weeks ago          Exited (255) 34 minutes ago   0.0.0.0:5006->5000/tcp                                     malaria-api
+de5b22afd665   docker.elastic.co/kibana/kibana:8.15.0                 "/bin/tini -- /usr/l…"   2 weeks ago          Exited (0) 7 days ago                                                                    kibana
+68b27d6d1976   docker.elastic.co/beats/filebeat:8.15.0                "/usr/bin/tini -- /u…"   2 weeks ago          Exited (0) 7 days ago                                                                    filebeat
+6e729ae99713   docker.elastic.co/elasticsearch/elasticsearch:8.15.0   "/bin/tini -- /usr/l…"   2 weeks ago          Exited (143) 7 days ago                                                                  elasticsearch

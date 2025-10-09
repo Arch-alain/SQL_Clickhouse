@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  clickhouse-server:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-server
+    platform: linux/amd64       # 👈 add this line
+    restart: always
+    env_file: .env
+    environment:
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB}
+    ports:
+      - "8123:8123"   # HTTP interface
+      - "9001:9001"   # Native TCP interface
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+
+  clickhouse-client:
+    image: clickhouse/clickhouse-client:latest
+    container_name: clickhouse-client
+    platform: linux/amd64       # 👈 add this line too
+    depends_on:
+      - clickhouse-server
+    env_file: .env
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5 &&
+      clickhouse-client
+        --host clickhouse-server
+        --user ${CLICKHOUSE_USER}
+        --password ${CLICKHOUSE_PASSWORD}
+        --database ${CLICKHOUSE_DB}
+      "
+         /bin/sh -c "
+      sleep 5 &&
+      clickhouse-client
+        --host clickhouse-server
+        --user ${CLICKHOUSE_USER}
+        --password ${CLICKHOUSE_PASSWORD}
+        --database ${CLICKHOUSE_DB}
+      "
+    tty: true
+
+volumes:
+  clickhouse_data:
+  clickhouse_logs:
