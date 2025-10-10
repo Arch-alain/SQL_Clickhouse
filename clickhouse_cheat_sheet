@@ -1,0 +1,10 @@
+# Running the clickhouse client container
+docker exec -it clickhouse-client clickhouse-client --host clickhouse-server --port 9000 --user analytics --password SuperSecurePass123 --database analytics_db
+
+#Accessing the clickhouse database inside the conatainer
+root@...:/# clickhouse-client --host clickhouse-server --port 9000 --user analytics --password SuperSecurePass123 --database analytics_db
+
+#checking the logs of clickhouse-client/server
+docker logs clickhouse-client 
+docker logs clickhouse-server 
+
