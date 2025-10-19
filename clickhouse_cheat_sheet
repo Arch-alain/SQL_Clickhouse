@@ -1,5 +1,6 @@
 # Running the clickhouse client container
 docker exec -it clickhouse-client clickhouse-client --host clickhouse-server --port 9000 --user analytics --password SuperSecurePass123 --database analytics_db
+docker exec -it clickhouse-client clickhouse-client --host clickhouse-server --port 9000 --user analytics --password SuperSecurePass123 --database electricity
 
 #Accessing the clickhouse database inside the conatainer
 root@...:/# clickhouse-client --host clickhouse-server --port 9000 --user analytics --password SuperSecurePass123 --database analytics_db
@@ -7,4 +8,14 @@ root@...:/# clickhouse-client --host clickhouse-server --port 9000 --user analyt
 #checking the logs of clickhouse-client/server
 docker logs clickhouse-client 
 docker logs clickhouse-server 
+
+# Sample create table query.
+  #I created  a table 
+CREATE TABLE analytics_db.my_first_table
+            (user_id UInt32,
+            message String,
+            timestamp DateTime,
+            metric Float32) 
+            ENGINE = MergeTree() 
+            PRIMARY KEY (user_id, timestamp)
 
