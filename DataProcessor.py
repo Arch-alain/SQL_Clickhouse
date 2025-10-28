@@ -10,6 +10,8 @@ import pandas as pd
 from dotenv import load_dotenv
 from utils import *
 import argparse
+from clickhouse_driver import Client
+
 
 # ------------------- Logging Setup -------------------
 load_dotenv()
@@ -51,6 +53,7 @@ def main():
     parser = argparse.ArgumentParser(description="A script that receives arguments.")
     parser.add_argument("--url", type=str, required=False, help="URL to download the data from")
     parser.add_argument("--unzipping", action="store_true", help="Process already downloaded zip files")
+    parser.add_argument("--process", action="store_true", help="Process unzipped files")
 
     args = parser.parse_args()
 
@@ -62,6 +65,50 @@ def main():
             logging.info(f"Downloaded: {downloaded_file}")
         except Exception as e:
             logging.error(f"Error downloading file: {e}", exc_info=True)
+            raise
+    if args.process:
+        try:
+            logging.info("processing the file started")
+            df=process_files(DATA_DIR,PROCESSED_LOG)
+            df['images'] = df['images'].apply(convert_to_json)
+            columns_def = []
+            for col in df.columns:
+                sample_value = df[col].dropna().iloc[0] if not df[col].dropna().empty else ""
+                ch_type = map_dtype(col, sample_value)
+                columns_def.append(f"{col} {ch_type}")
+            # logging.info(f"Downloaded: {downloaded_file}")
+            # Connect to ClickHouse
+
+            create_table_query = f"""
+            CREATE TABLE IF NOT EXISTS analytics_db.reviews (
+                {', '.join(columns_def)}
+            ) ENGINE = ReplacingMergeTree(timestamp)
+            ORDER BY (parent_asin, timestamp)
+            """
+            client = Client(
+                host=CLICKHOUSE_HOST,
+                port=9000,
+                user=CLICKHOUSE_USER,
+                password=CLICKHOUSE_PASSWORD,
+                database=CLICKHOUSE_DB
+            )
+            client.execute(create_table_query)
+
+            Chunks = np.array_split(df, 20)
+
+            for ind,Chunk in enumerate(Chunks):
+                try:
+                    
+                    push_data_in_chunks(client,'analytics_db', 'fashion_reviews', Chunk, 'timestamp')  
+                    # def push_data(client: Client, Schema: str, TableName: str, Data, TimeStampColumn=None):
+                
+                    print ('Inserted chunk no ', ind+1, 'out of 20 with shape ', Chunk.shape)
+                    
+                except Exception as e:
+                    
+                    print(e)
+        except Exception as e:
+            logging.error(f"Error processing file: {e}", exc_info=True)
             raise
 
     # ---------------- Unzip Mode ----------------
@@ -84,7 +131,8 @@ def main():
                     extracted_files = decompress_file(file_path, DATA_DIR)
                     logging.info(f"Unzipped {file_path} → {extracted_files}")
                     print(f"Processing: {file_path}")
-
+                    df = load_json_or_jsonl_pandas(extracted_files)
+                    print(df)
                     processed_hashes.append(file_hash)
                     save_processed_files(processed_hashes,PROCESSED_LOG_ZIPPED)
                     

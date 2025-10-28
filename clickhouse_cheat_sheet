@@ -1,5 +1,11 @@
 # Running the clickhouse client container
 docker exec -it clickhouse-client clickhouse-client --host clickhouse-server --port 9000 --user analytics --password SuperSecurePass123 --database analytics_db
+
+
+#since the credentials are stored in .env you don't need to pass the credentials
+docker-compose run clickhouse-client
+
+
 docker exec -it clickhouse-client clickhouse-client --host clickhouse-server --port 9000 --user analytics --password SuperSecurePass123 --database electricity
 
 #Accessing the clickhouse database inside the conatainer
@@ -19,3 +25,11 @@ CREATE TABLE analytics_db.my_first_table
             ENGINE = MergeTree() 
             PRIMARY KEY (user_id, timestamp)
 
+
+# Dataset URLS
+https://mcauleylab.ucsd.edu/public_datasets/data/amazon_2023/raw/review_categories/Amazon_Fashion.jsonl.gz
+https://mcauleylab.ucsd.edu/public_datasets/data/amazon_2023/raw/review_categories/All_Beauty.jsonl.gz
+
+
+python DataProcessor.py --url "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_2023/raw/review_categories/Amazon_Fashion.jsonl.gz"
+python DataProcessor.py --unzipping
