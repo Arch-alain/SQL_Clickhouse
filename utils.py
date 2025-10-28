@@ -8,22 +8,12 @@ import requests
 import polars as pl
 import pandas as pd
 import hashlib
+import time
+import numpy as np
+from clickhouse_driver import Client
 
 
-# ------------------- Configuration -------------------
-# URL = "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_2023/raw/review_categories/All_Beauty.jsonl.gz"
-# DATA_DIR = "DataSet"
-# os.makedirs(DATA_DIR, exist_ok=True)
-# LOG_FILE = os.path.join(DATA_DIR, "data_ingestion.log")
 
-# ------------------- Logging Setup -------------------
-# logging.basicConfig(
-#     filename=LOG_FILE,
-#     level=logging.INFO,
-#     format="%(asctime)s - %(levelname)s - %(message)s"
-# )
-
-# ------------------- Helper Functions -------------------
 
 def download_file(url: str, dest_folder: str) -> str:
     """Download file from a URL and return the local file path."""
@@ -180,32 +170,120 @@ def process_files(DATA_FOLDER,Processed_FOLDER):
         try:
             print(f"Processing: {file_path}")
 
-            df = load_json_or_jsonl(file_path=file_path)
+            df = load_json_or_jsonl_pandas(file_path=file_path)
+
             processed_hashes.append(file_hash)
-            print(df)
+            # print(df)
             save_processed_files(processed_hashes,Processed_FOLDER)
             # print(f"✅ Successfully ingested {os.path.basename(file_path)}")
         except Exception as e:
             print(f"❌ Failed to ingest {file_path}: {e}")
 
+    return df
+    
 
 
-# ------------------- Main Script -------------------
+def convert_to_json(x):
+    if x is None:
+        return None
+    return json.dumps(x)
+# Map DataFrame types to ClickHouse types
+def map_dtype(col_name, sample_value):
+    if isinstance(sample_value, (int, np.integer)):
+        return "Int32"
+    elif isinstance(sample_value, (float, np.floating)):
+        return "Float32"
+    elif isinstance(sample_value, (bool, np.bool_)):
+        return "UInt8"
+    elif isinstance(sample_value, (dict, list)):
+        return "String"  # store as JSON string
+    else:
+        return "String"
 
-# if __name__ == "__main__":
-#     try:
-#         logging.info("=== Data Ingestion Process Started ===")
-#         downloaded_file = download_file(URL, DATA_DIR)
-#         extracted_file = decompress_file(downloaded_file)
-#         df = load_json_or_jsonl(extracted_file)
+def clean_value(x):
+    """Clean and convert values before insertion."""
+    # Handle NaN / None
+    if isinstance(x, (int, float, str, bool, type(None), pd.Timestamp)):
+        return None if pd.isnull(x) else x
+    
+    # Handle dicts/lists → serialize as JSON string
+    elif isinstance(x, (dict, list, np.ndarray)):
+        return json.dumps(x, ensure_ascii=False)
+    
+    # Other exotic types
+    else:
+        return str(x)
 
-#         # Save DataFrame to parquet for next ingestion step (optional)
-#         parquet_path = os.path.join(DATA_DIR, "amazon_reviews.parquet")
-#         df.write_parquet(parquet_path)
-#         logging.info(f"Saved cleaned data to {parquet_path}")
+def gen_rows_for_insert(Data, TimeStampColumn=None):
+    """
+    Convert a DataFrame into a list of tuples suitable for ClickHouse insert.
+    Handles timestamps, NaNs, dicts/lists.
+    """
+    ColumnNames = [str(x) for x in Data.columns]
+    OldRows = Data.values.tolist()
+    NewRows = []
 
-#         logging.info("=== Data Ingestion Process Completed Successfully ===")
+    TSColIndx = Data.columns.get_loc(TimeStampColumn) if TimeStampColumn else None
 
-#     except Exception as e:
-#         logging.error(f"Error during data ingestion: {e}", exc_info=True)
-#         raise
+    for row in OldRows:
+        row = [clean_value(x) for x in row]
+
+        # Timestamp handling
+        # Timestamp handling — convert all to ISO string
+        if TSColIndx is not None and row[TSColIndx] is not None:
+            val = row[TSColIndx]
+            if isinstance(val, pd.Timestamp):
+                row[TSColIndx] = val.strftime("%Y-%m-%d %H:%M:%S.%f")
+            elif isinstance(val, datetime):
+                row[TSColIndx] = val.strftime("%Y-%m-%d %H:%M:%S.%f")
+            else:
+                row[TSColIndx] = str(val)
+
+        # Boolean handling
+        row = [int(x) if isinstance(x, bool) else x for x in row]
+        NewRows.append(tuple(row))
+
+    return ColumnNames, NewRows
+
+    
+def push_data_in_chunks(client: Client, Schema: str, TableName: str, Data: pd.DataFrame,
+                        TimeStampColumn: str = None, chunk_size: int = 5000):
+    """
+    Push DataFrame data to ClickHouse in chunks.
+    
+    Args:
+        client: clickhouse_driver.Client instance
+        Schema: ClickHouse database/schema
+        TableName: ClickHouse table name
+        Data: pandas DataFrame
+        TimeStampColumn: optional timestamp column name
+        chunk_size: number of rows per insert
+    """
+    assert isinstance(Data, pd.DataFrame), f"Expected DataFrame, got {type(Data)}"
+    Data = Data.dropna(axis=1, how='all')
+    if Data.empty:
+        print("No data to insert.")
+        return
+
+    ColumnNames, _ = gen_rows_for_insert(Data.head(1), TimeStampColumn)
+    col_str = "(" + ", ".join(ColumnNames) + ")"
+
+    total_rows = len(Data)
+    print(f"Total rows to insert: {total_rows}")
+
+    start_total = time.time()
+
+    for start_idx in range(0, total_rows, chunk_size):
+        end_idx = min(start_idx + chunk_size, total_rows)
+        chunk = Data.iloc[start_idx:end_idx]
+        _, Rows = gen_rows_for_insert(chunk, TimeStampColumn)
+
+        start = time.time()
+        client.execute(
+            f"INSERT INTO {Schema}.{TableName} {col_str} VALUES",
+            Rows,
+            types_check=True
+        )
+        print(f"Inserted rows {start_idx} to {end_idx-1} in {round(time.time() - start, 2)}s")
+
+    print(f"All data inserted in {round(time.time() - start_total, 2)}s")
